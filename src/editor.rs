@@ -239,6 +239,8 @@ impl<'a, W: Write> Editor<'a, W> {
         self.cursor
     }
 
+    pub fn show_autosuggestions(&self) -> bool { self.show_completions_hint.is_some() }
+
     // XXX: Returning a bool to indicate doneness is a bit awkward, maybe change it
     pub fn handle_newline(&mut self) -> io::Result<bool> {
         if self.is_search() {
@@ -416,11 +418,63 @@ impl<'a, W: Write> Editor<'a, W> {
         self.show_completions_hint = None;
     }
 
-    pub fn complete(&mut self, handler: &mut EventHandler<W>) -> io::Result<()> {
+    pub fn complete(&mut self, handler: &mut EventHandler<W>, completion_type: CompleteType) -> io::Result<()> {
         handler(Event::new(self, EventKind::BeforeComplete));
 
         if let Some((completions, i)) = self.show_completions_hint.take() {
-            let i = i.map_or(0, |i| (i+1) % completions.len());
+
+            let i = {
+
+                use std::cmp::max;
+                use std::cmp::min;
+
+                let (w, _) = termion::terminal_size()?;
+
+                // XXX wide character support
+                let max_word_size = completions.iter().fold(1, |m, x| max(m, x.chars().count()));
+                let cols_items = max(1, w as usize / (max_word_size));
+                let col_width = 2 + w as usize / cols_items;
+                let cols = max(1, w as usize / col_width);
+                let line_count = (completions.len() as u64 / cols as u64) as usize;
+
+                match i {
+                    None => 0,
+                    Some(i) => {
+                        match completion_type {
+                            CompleteType::Next => {
+                                if i + 1 >= completions.len() {
+                                    0
+                                } else {
+                                    min(i + 1, completions.len() - 1)
+                                }
+                            }
+                            CompleteType::Prev => {
+                                if i == 0 {
+                                    completions.len() - 1
+                                } else {
+                                    max(i - 1, 0)
+                                }
+                            },
+                            CompleteType::Up => {
+                                if i + 1 < cols_items {
+                                    i
+                                } else {
+                                   i + 1 - cols_items
+                                }
+                            },
+                            CompleteType::Down => {
+                                if i + cols_items - 1 > completions.len() - 1 {
+                                    i
+                                } else {
+                                    i + cols_items - 1
+                                }
+                            },
+                        }
+                    }
+                }
+            };
+
+            //let i = i.map_or(0, |i| (i+2) % completions.len());
 
             self.delete_word_before_cursor(false)?;
             self.insert_str_after_cursor(&completions[i])?;
@@ -536,6 +590,11 @@ impl<'a, W: Write> Editor<'a, W> {
 
     /// Move up (backwards) in history.
     pub fn move_up(&mut self) -> io::Result<()> {
+
+        if self.show_autosuggestions() {
+            return Ok(());
+        }
+
         if self.is_search() {
             self.search(false)
         } else {
@@ -567,6 +626,11 @@ impl<'a, W: Write> Editor<'a, W> {
 
     /// Move down (forwards) in history, or to the new buffer if we reach the end of history.
     pub fn move_down(&mut self) -> io::Result<()> {
+
+        if self.show_autosuggestions() {
+            return Ok(());
+        }
+
         if self.is_search() {
             self.search(true)
         } else {
@@ -714,6 +778,11 @@ impl<'a, W: Write> Editor<'a, W> {
     /// Moves the cursor to the left by `count` characters.
     /// The cursor will not go past the start of the buffer.
     pub fn move_cursor_left(&mut self, mut count: usize) -> io::Result<()> {
+
+        if self.show_autosuggestions() {
+           return self.display();
+        }
+
         if count > self.cursor {
             count = self.cursor;
         }
@@ -727,6 +796,11 @@ impl<'a, W: Write> Editor<'a, W> {
     /// Moves the cursor to the right by `count` characters.
     /// The cursor will not go past the end of the buffer.
     pub fn move_cursor_right(&mut self, mut count: usize) -> io::Result<()> {
+
+        if self.show_autosuggestions() {
+            return self.display();
+        }
+
         {
             let buf = cur_buf!(self);
 

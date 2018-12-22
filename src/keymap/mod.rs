@@ -30,7 +30,16 @@ pub trait KeyMap<'a, W: Write, T>: From<T> {
                 self.editor_mut().handle_newline()?;
                 return Err(io::Error::new(ErrorKind::UnexpectedEof, "ctrl-d"));
             }
-            Key::Char('\t') => self.editor_mut().complete(handler)?,
+            Key::Char('\t') => self.editor_mut().complete(handler, CompleteType::Next)?,
+            Key::Right if self.editor().show_autosuggestions() => self.editor_mut().complete(handler, CompleteType::Next)?,
+            Key::Left if self.editor().show_autosuggestions() => self.editor_mut().complete(handler, CompleteType::Prev)?,
+            Key::Down if self.editor().show_autosuggestions() => self.editor_mut().complete(handler, CompleteType::Down)?,
+            Key::Up if self.editor().show_autosuggestions() => self.editor_mut().complete(handler, CompleteType::Up)?,
+            Key::Char('\n') if self.editor().show_autosuggestions() => {
+                self.editor_mut().accept_autosuggestion()?;
+                self.editor_mut().skip_completions_hint();
+                self.editor_mut().display()?;
+            },
             Key::Char('\n') => {
                 done = self.editor_mut().handle_newline()?;
             }
@@ -44,6 +53,7 @@ pub trait KeyMap<'a, W: Write, T>: From<T> {
                 self.editor_mut().search(true)?;
             }
             Key::Right if self.editor().is_currently_showing_autosuggestion() &&
+                          !self.editor().show_autosuggestions() &&
                           self.editor().cursor_is_at_end_of_line() => {
                 self.editor_mut().accept_autosuggestion()?;
             }

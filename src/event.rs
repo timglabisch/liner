@@ -27,3 +27,10 @@ pub enum EventKind {
     /// Sent in `Editor.complete()`, before processing the completion.
     BeforeComplete,
 }
+
+pub enum CompleteType {
+    Next,
+    Prev,
+    Down,
+    Up,
+}
